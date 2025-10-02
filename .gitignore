@@ -1,0 +1,18 @@
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+
+# notebooks & caches
+.ipynb_checkpoints/
+
+# keep big stuff OUT of git
+data/
+outputs/
+models/
+checkpoints/
+*.zip *.npz *.pt *.pth *.h5 *.onnx
+
