@@ -51,29 +51,26 @@ def hinge_loss_single(feature_vector, label, theta, theta_0):
 
 def hinge_loss_full(feature_matrix, labels, theta, theta_0):
     """
-    Finds the hinge loss for given classification parameters averaged over a
-    given dataset
-
-    Args:
-        `feature_matrix` - numpy matrix describing the given data. Each row
-            represents a single data point.
-        `labels` - numpy array where the kth element of the array is the
-            correct classification of the kth row of the feature matrix.
-        `theta` - numpy array describing the linear classifier.
-        `theta_0` - real valued number representing the offset parameter.
-    Returns:
-        the hinge loss, as a float, associated with the given dataset and
-        parameters.  This number should be the average hinge loss across all of
+    Average hinge loss: mean(max(0, 1 - y*(x·θ + θ0)))
+    Shapes:
+      feature_matrix: (n, d)
+      labels: (n,) with values in {-1, +1}
+      theta: (d,)  [1-D!]
+      theta_0: float
     """
+    X = np.asarray(feature_matrix, dtype=float)            # (n,d)
+    y = np.asarray(labels, dtype=float).reshape(-1)        # (n,)
+    theta = np.asarray(theta, dtype=float).reshape(-1)     # (d,)
+    t0 = float(theta_0)
 
-    # Your code here
-    y = labels.ravel()
-    
-    margins = y*(feature_matrix@theta + theta)
-    
-    hinge_losses = np.maximum(0, 1 - margins)
-    
-    return float(hinge_losses.mean())
+    # Optional: sanity check that labels are ±1
+    # if not np.all(np.isin(np.unique(y), [-1., 1.])):
+    #     raise ValueError("labels must be ±1")
+
+    margins = y * (X @ theta + t0)                         # (n,)
+    losses = np.maximum(0.0, 1.0 - margins)                # (n,)
+    return float(losses.mean())
+
 
 
 
@@ -100,7 +97,18 @@ def perceptron_single_step_update(
         the updated offset parameter `theta_0` as a floating point number
     """
     # Your code here
-    raise NotImplementedError
+    x = np.asarray(feature_vector, dtype=float).reshape(-1)  # (d,)
+    y = float(label)
+    theta = np.asarray(current_theta, dtype=float).reshape(-1)
+    theta0 = float(current_theta_0)
+    eps = 1e-12
+
+    margin = y * (theta @ x + theta0)
+    if margin <= eps:  # update on mistake or tie
+        theta = theta + y * x
+        theta0 = theta0 + y
+
+    return theta, theta0
 
 
 
@@ -127,13 +135,20 @@ def perceptron(feature_matrix, labels, T):
             (found also after T iterations through the feature matrix).
     """
     # Your code here
-    raise NotImplementedError
+
+    X = np.asarray(feature_matrix, dtype=float) #(n,d)
+    y = np.asarray(labels, dtype=float).reshape(-1)  #(n,)
+    nsamples = X.shape[0]
+
+    assert y.shape[0] == nsamples
+    theta = np.zeros(feature_matrix.shape[-1]).reshape(-1)
+    theta_0 = float(0)
+
     for t in range(T):
         for i in get_order(nsamples):
-            # Your code here
-            raise NotImplementedError
-    # Your code here
-    raise NotImplementedError
+            theta, theta_0 = perceptron_single_step_update(X[i], y[i], theta, theta_0)
+
+    return theta, theta_0
 
 
 
@@ -164,7 +179,26 @@ def average_perceptron(feature_matrix, labels, T):
             (averaged also over T iterations through the feature matrix).
     """
     # Your code here
-    raise NotImplementedError
+    X = np.asarray(feature_matrix, float)  # (n, d)
+    y = np.asarray(labels, float).reshape(-1)  # (n,)
+    n, d = X.shape
+
+    theta = np.zeros(d, float)
+    theta_0 = 0.0
+
+    theta_sum = np.zeros(d, float)
+    theta0_sum = 0.0
+    count = 0  # ends up as n*T
+
+    for _ in range(T):
+        for i in get_order(n):
+            theta, theta_0 = perceptron_single_step_update(X[i], float(y[i]), theta, theta_0)
+            theta_sum += theta
+            theta0_sum += theta_0
+            count += 1
+
+
+    return theta_sum / count, theta0_sum / count
 
 
 def pegasos_single_step_update(
@@ -195,7 +229,30 @@ def pegasos_single_step_update(
         completed.
     """
     # Your code here
-    raise NotImplementedError
+    X = np.asarray(feature_vector, dtype=float).ravel()
+    y = float(label)  # ensure scalar
+    theta = np.asarray(theta, dtype=float).ravel()
+    theta_0 = float(theta_0)  # ensure scalar
+
+    # Guards to catch the real culprit early
+    assert X.ndim == 1, f"X.ndim={X.ndim}"
+    assert theta.ndim == 1, f"theta.ndim={theta.ndim}"
+    assert X.shape == theta.shape, f"X.shape={X.shape}, theta.shape={theta.shape}"
+    assert np.isscalar(y), f"type(y)={type(y)}"
+    assert np.isscalar(theta_0), f"type(theta_0)={type(theta_0)}"
+
+    margin = y * (np.dot(X, theta) + theta_0)
+
+    if margin <= 1.0:  # violation or on-margin
+        theta = (1.0 - eta * L) * theta + eta * y * X
+        theta_0 = theta_0 + eta * y
+    else:  # non-violator: shrink only
+        theta = (1.0 - eta * L) * theta
+
+    return theta, theta_0
+
+
+
 
 
 
@@ -227,7 +284,23 @@ def pegasos(feature_matrix, labels, T, L):
         after T iterations through the feature matrix.
     """
     # Your code here
-    raise NotImplementedError
+    X = np.asarray(feature_matrix, dtype=float)
+    y = np.asarray(labels, dtype=float).ravel()  # labels in {-1, +1}
+    n, d = X.shape
+
+    theta = np.zeros(d, dtype=float)
+    theta_0 = 0.0
+    t = 0
+
+    for _ in range(T):
+        for i in get_order(X.shape[0]):  # required by the prompt
+            t += 1  # counts updates: 1..n*T
+            eta = 1.0 / np.sqrt(t)  # assignment’s stepsize
+            theta, theta_0 = pegasos_single_step_update(
+                X[i], y[i], L, eta, theta, theta_0
+            )
+
+    return theta, theta_0
 
 
 
@@ -264,7 +337,14 @@ def classify(feature_matrix, theta, theta_0):
         should be considered a positive classification.
     """
     # Your code here
-    raise NotImplementedError
+    X = np.asarray(feature_matrix, dtype=float)
+    th = np.asarray(theta, dtype=float).ravel()
+    b = float(theta_0)
+
+    scores = X @ th + b  # shape: (n,)
+    preds = np.where(scores > 0.0, 1, -1)  # >0 -> +1, else -1
+
+    return preds.astype(float)  # or .astype(int) if you prefer ints
 
 
 def classifier_accuracy(
@@ -300,8 +380,19 @@ def classifier_accuracy(
         trained classifier on the training data and the second element is the
         accuracy of the trained classifier on the validation data.
     """
-    # Your code here
-    raise NotImplementedError
+    #train the model
+    theta, theta_0 = classifier(train_feature_matrix, train_labels, **kwargs)
+
+    #prediction on train and val data
+    train_preds = classify(train_feature_matrix, theta, theta_0)
+    val_preds = classify(val_feature_matrix, theta, theta_0)
+
+    #calculate accuracies
+    train_acc = accuracy(train_preds, train_labels)
+    val_acc = accuracy(val_preds, val_labels)
+
+    return train_acc, val_acc
+
 
 
 
@@ -314,8 +405,6 @@ def extract_words(text):
         a list of lowercased words in the string, where punctuation and digits
         count as their own words.
     """
-    # Your code here
-    raise NotImplementedError
 
     for c in punctuation + digits:
         text = text.replace(c, ' ' + c + ' ')
@@ -323,28 +412,20 @@ def extract_words(text):
 
 
 
-def bag_of_words(texts, remove_stopword=False):
+def bag_of_words(texts, remove_stopword: bool = False):
     """
-    NOTE: feel free to change this code as guided by Section 3 (e.g. remove
-    stopwords, add bigrams etc.)
+    Build vocab on TRAIN TEXTS ONLY.
+    If remove_stopword is True, `stopwords` should be a set/list of tokens.
+    """
+    stops = set(stopwords) if (remove_stopword and stopwords is not None) else None
 
-    Args:
-        `texts` - a list of natural language strings.
-    Returns:
-        a dictionary that maps each word appearing in `texts` to a unique
-        integer `index`.
-    """
-    # Your code here
-    raise NotImplementedError
-    
-    indices_by_word = {}  # maps word to unique index
+    indices_by_word = {}
     for text in texts:
-        word_list = extract_words(text)
-        for word in word_list:
-            if word in indices_by_word: continue
-            if word in stopword: continue
-            indices_by_word[word] = len(indices_by_word)
-
+        for w in extract_words(text):
+            if stops is not None and w in stops:
+                continue
+            if w not in indices_by_word:
+                indices_by_word[w] = len(indices_by_word)
     return indices_by_word
 
 
@@ -368,7 +449,7 @@ def extract_bow_feature_vectors(reviews, indices_by_word, binarize=True):
             feature_matrix[i, indices_by_word[word]] += 1
     if binarize:
         # Your code here
-        raise NotImplementedError
+        feature_matrix = (feature_matrix > 0).astype(np.float64)
     return feature_matrix
 
 
