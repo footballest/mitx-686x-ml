@@ -412,7 +412,7 @@ def extract_words(text):
 
 
 
-def bag_of_words(texts, remove_stopword: bool = False):
+def bag_of_words(texts, remove_stopword: bool = False, stopwords=None):
     """
     Build vocab on TRAIN TEXTS ONLY.
     If remove_stopword is True, `stopwords` should be a set/list of tokens.
